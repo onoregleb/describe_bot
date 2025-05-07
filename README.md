@@ -25,18 +25,18 @@ A FastAPI application that implements a Telegram bot for generating AI descripti
 
 ### Installation
 
-1. Clone the repository:
+1. Склонируйте репозиторий [https://github.com/onoregleb/describe_bot](github):
 ```bash
-git clone <repository-url>
-cd <repository-directory>
+git clone https://github.com/onoregleb/describe_bot
+cd describe_bot
 ```
 
-2. Install dependencies:
+2. Установите зависимости:
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Create a `.env` file in the root directory with the following variables:
+3. Создайте файл `.env` в корневой директории с переменными окружения:
 ```
 # Bot configuration
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
@@ -59,13 +59,7 @@ The application will automatically create the required tables on startup. Ensure
 
 ## Running the Application
 
-Start the FastAPI server:
-
-```bash
-python main.py
-```
-
-Or use uvicorn directly:
+Запустите FastAPI сервер:
 
 ```bash
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
@@ -73,25 +67,21 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 ## Using the Bot
 
-1. Start a chat with your bot on Telegram
-2. Send `/start` to get started
-3. Send a URL in one of these formats:
+1. Начните чат с ботом на Telegram
+2. Отправьте `/start` чтобы начать
+3. Отправьте URL в одном из этих форматов:
    - `/start example.com`
    - `example.com`
    - `https://example.com`
    - `example.com query words`
-4. The bot will fetch information about the website and generate an AI description
+4. Бот получит информацию о сайте и сгенерирует AI описание
 
 ## Development with Ngrok
 
-For local development, you can use ngrok to expose your local server:
+Для локальной разработки вы можете использовать ngrok для выставления вашего локального сервера:
 
 ```bash
 ngrok http 8000
 ```
 
-Then update your `WEBHOOK_URL` in the `.env` file with the ngrok URL.
-
-## License
-
-[MIT License](LICENSE) 
+Затем обновите `WEBHOOK_URL` в файле `.env` с ngrok URL и запустите (пункт Running the Application)
