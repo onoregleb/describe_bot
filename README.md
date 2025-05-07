@@ -1,16 +1,16 @@
 # URL Description Bot
 
-A FastAPI application that implements a Telegram bot for generating AI descriptions of websites, based on a URL provided by the user.
+FastAPI приложение, которое реализует Telegram бота для генерации AI описаний сайтов, на основе URL, предоставленного пользователем.
 
 ## Features
 
-- Receives messages via Telegram webhook
-- Extracts URLs and optional queries from user messages
-- Saves URLs to PostgreSQL database
-- Searches for information about the URL using Yandex Search API
-- Fetches web content and processes it
-- Generates AI descriptions using OpenAI's GPT-4o-mini model
-- Sends responses back to the user
+- Принимает сообщения через Telegram webhook
+- Извлекает URLs и необязательные запросы от пользователей
+- Сохраняет URLs в базу данных PostgreSQL
+- Ищет информацию о URL с помощью Yandex Search API
+- Получает веб-содержимое и обрабатывает его
+- Генерирует AI описания с помощью OpenAI's GPT-4o-mini model
+- Отправляет ответы пользователю
 
 ## Setup
 
@@ -55,7 +55,7 @@ YANDEX_API_KEY=your_yandex_api_key
 
 ### Database Setup
 
-The application will automatically create the required tables on startup. Ensure your PostgreSQL server is running and the database exists.
+Приложение автоматически создаст необходимые таблицы при запуске. Убедитесь, что ваш сервер PostgreSQL запущен и база данных существует.
 
 ## Running the Application
 
