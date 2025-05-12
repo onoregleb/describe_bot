@@ -101,10 +101,10 @@ async def save_url_to_db(db: Session, dialog_id: int, website: str) -> None:
     cleaned_text = await clean_html_content(content)
     logger.debug(f"Fetched and cleaned website content. Size: {len(content)} bytes, cleaned: {len(cleaned_text)} bytes")
     
-    # ALWAYS search for company information using Yandex API
-    logger.debug(f"Calling Yandex API for website {website}...")
-    company_info = await search_with_yandex("информация о компании", website)
-    logger.debug(f"Received Yandex API response. Company name: {company_info.get('company_name', 'Unknown')}")
+    # Get basic company info without using Yandex API
+    logger.debug(f"Getting basic company info for website {website}...")
+    company_info = await search_with_yandex("", website)        
+    logger.debug(f"Generated basic company info. Company name: {company_info.get('company_name', 'Unknown')}")
     
     # Combine the information - use cleaned text and add the company info
     combined_text = cleaned_text
@@ -156,145 +156,34 @@ async def fetch_webpage_content(url: str) -> str:
 
 
 async def search_with_yandex(query: str, url: str = None) -> Dict[str, Any]:
-    """Search for company information using Yandex Search API
+    """Placeholder function that returns basic company info without using Yandex API
     
     Args:
-        query: The search query
-        url: Optional website URL to focus the search
+        query: The search query (not used)
+        url: Optional website URL (used to extract domain name)
         
     Returns:
-        Dict containing search results and extracted information
+        Dict containing basic company information
     """
-    print(f"[YANDEX API] Making Yandex API call for query: {query}, url: {url}")
-    # Print stack trace to see where this is called from
-    import traceback
-    print("[YANDEX API] Call stack:")
-    traceback.print_stack(limit=5)
+    logger.debug(f"[INFO] search_with_yandex called with query: {query}, url: {url}")
     
-    if not YANDEX_API_KEY or not YANDEX_FOLDERID:
-        print("Yandex API credentials are missing")
-        return {
-            "company_name": "Unknown",
-            "description": "Не удалось получить информацию о компании: отсутствуют учетные данные API.",
-            "services": [],
-            "contact": {}
-        }
-    
-    headers = {
-        "Authorization": f"Api-Key {YANDEX_API_KEY}",
-        "x-folder-id": YANDEX_FOLDERID,
-        "Content-Type": "application/json"
-    }
-    
-    # If URL is provided, focus search on that domain
-    search_query = query
+    # Extract domain from URL if provided
+    company_name = "Unknown"
     if url:
-        # Extract domain from URL, handling different URL formats
         domain_match = re.search(r'(?:https?://)?(?:www\.)?((?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,})', url)
         if domain_match:
             domain = domain_match.group(1)
-            search_query = f"{query} site:{domain}"
-            print(f"Using domain-specific search query: {search_query}")
-        else:
-            print(f"Could not extract domain from URL: {url}")
+            # Use domain as company name (without TLD)
+            company_name = domain.split('.')[0].capitalize()
+            logger.debug(f"Extracted domain: {domain}, using company name: {company_name}")
     
-    yandex_search_url = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
-    
-    payload = {
-        "modelUri": "gpt://b1gvge5pe35lrn55nnhd/yandexgpt-lite",
-        "completionOptions": {
-            "stream": False,
-            "temperature": 0.6,
-            "maxTokens": 1500
-        },
-        "messages": [
-            {
-                "role": "system",
-                "text": "You are a research assistant that extracts accurate information about companies from search results."
-            },
-            {
-                "role": "user",
-                "text": f"Search the web for: {search_query}\n\nFind the following information about the company: company name, description, services offered, contact information. Format as JSON."
-            }
-        ]
+    # Return basic company info structure
+    return {
+        "company_name": company_name,
+        "description": "Информация о компании получена из содержимого веб-сайта.",
+        "services": [],
+        "contact": {}
     }
-    
-    try:
-        print("Sending request to Yandex API")
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(yandex_search_url, headers=headers, json=payload, timeout=30.0)
-                response.raise_for_status()
-                result = response.json()
-                
-                print(f"Received response from Yandex API: Status {response.status_code}")
-                
-                # Extract the result text and parse it
-                result_text = result.get("result", {}).get("alternatives", [{}])[0].get("message", {}).get("text", "")
-                
-                if not result_text:
-                    print("Warning: Empty result text from Yandex API")
-                    return {
-                        "company_name": "Unknown",
-                        "description": "Информация о компании не найдена.",
-                        "services": [],
-                        "contact": {}
-                    }
-                
-                # Try to extract JSON from the text response
-                try:
-                    # Find JSON-like content
-                    json_match = re.search(r'\{.*\}', result_text, re.DOTALL)
-                    if json_match:
-                        json_str = json_match.group(0)
-                        parsed_data = json.loads(json_str)
-                        print(f"Successfully parsed JSON from Yandex response. Company name: {parsed_data.get('company_name', 'Unknown')}")
-                        return parsed_data
-                    else:
-                        print("No JSON content found in Yandex response, using raw text")
-                        # Return structured format if no JSON found
-                        return {
-                            "company_name": "Unknown",
-                            "description": result_text,
-                            "services": [],
-                            "contact": {}
-                        }
-                except json.JSONDecodeError as json_err:
-                    print(f"Failed to parse JSON from Yandex response: {json_err}")
-                    # If we can't parse JSON, return the text
-                    return {
-                        "company_name": "Unknown",
-                        "description": result_text,
-                        "services": [],
-                        "contact": {}
-                    }
-            except httpx.HTTPStatusError as http_err:
-                print(f"HTTP error occurred when calling Yandex API: {http_err}")
-                return {
-                    "company_name": "Unknown",
-                    "description": f"Ошибка при запросе к API: {http_err.response.status_code}",
-                    "services": [],
-                    "contact": {}
-                }
-            except httpx.RequestError as req_err:
-                print(f"Request error occurred when calling Yandex API: {req_err}")
-                return {
-                    "company_name": "Unknown",
-                    "description": "Ошибка сетевого запроса при обращении к API.",
-                    "services": [],
-                    "contact": {}
-                }
-                
-    except Exception as e:
-        print(f"Unexpected error in Yandex search: {e}")
-        import traceback
-        traceback.print_exc()
-        return {
-            "company_name": "Unknown",
-            "description": "Непредвиденная ошибка при получении информации о компании.",
-            "services": [],
-            "contact": {}
-        }
 
 
 async def clean_html_content(html_content: str) -> str:
