@@ -10,18 +10,18 @@ engine = create_engine(db_url)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
-class UrlChat(Base):
-    __tablename__ = "url_chat"
+class ConferenceBot(Base):
+    __tablename__ = "conference_bot"
 
-    id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
-    dialog_id = Column(BigInteger, index=True, nullable=False)
-    website = Column(String, nullable=False)
-    cleaned_content = Column(Text)
+    # Use user_id as the primary key since it's already the PK in the database
+    user_id = Column(String(255), primary_key=True, nullable=False)
+    user_name = Column(String(255), nullable=False, default="Не указано")
+    sphere = Column(String(255), nullable=False, default="Не указано")
+    user_position = Column(String(255), nullable=False, default="Не указано")
     created_at = Column(DateTime, default=datetime.datetime.utcnow)
-
-    __table_args__ = (
-        {'sqlite_autoincrement': True},
-    )
+    site_url = Column(String(255), default="Не указано")
+    title = Column(Text, default="Не указано")
+    cleaned_content = Column(Text)
 
 def create_tables():
     Base.metadata.create_all(bind=engine)

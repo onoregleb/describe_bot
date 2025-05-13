@@ -9,7 +9,7 @@ import json
 import logging
 
 from config import YANDEX_FOLDERID, YANDEX_API_KEY, OPENAI_API_KEY
-from database import UrlChat
+from database import ConferenceBot
 
 logger = logging.getLogger(__name__)
 
@@ -112,24 +112,34 @@ async def save_url_to_db(db: Session, dialog_id: int, website: str) -> None:
         company_info_str = json.dumps(company_info, ensure_ascii=False)
         combined_text = f"{cleaned_text}\n\nYANDEX_COMPANY_INFO: {company_info_str}"
     
-    # Check if we already have information about this website for this user
-    existing = db.query(UrlChat).filter(
-        UrlChat.dialog_id == dialog_id,
-        UrlChat.website == website
+    # Check if we already have information about this user
+    existing = db.query(ConferenceBot).filter(
+        ConferenceBot.user_id == str(dialog_id)
     ).first()
 
+    # Default values for new fields
+    username = "Не указано"
+    industry = "Прочее"
+    position = "Рядовой сотрудник"
+    company_name = company_info.get('company_name', 'Не указано')
+    
     # Save data to database (update existing or create new)
     if existing:
         logger.debug(f"Updating existing record for {website}")
         existing.created_at = datetime.datetime.utcnow()
         existing.cleaned_content = combined_text
+        existing.title = company_name
         db.commit()
     else:
         logger.debug(f"Creating new record for {website}")
-        new_url = UrlChat(
-            dialog_id=dialog_id,
-            website=website,
-            cleaned_content=combined_text
+        new_url = ConferenceBot(
+            user_id=str(dialog_id),
+            site_url=website,
+            cleaned_content=combined_text,
+            user_name=username,
+            sphere=industry,
+            user_position=position,
+            title=company_name
         )
         db.add(new_url)
         db.commit()
@@ -139,10 +149,10 @@ async def save_url_to_db(db: Session, dialog_id: int, website: str) -> None:
     return
 
 
-async def get_latest_url(db: Session, dialog_id: int) -> Optional[UrlChat]:
-    return db.query(UrlChat).filter(
-        UrlChat.dialog_id == dialog_id
-    ).order_by(UrlChat.created_at.desc()).first()
+async def get_latest_url(db: Session, dialog_id: int) -> Optional[ConferenceBot]:
+    return db.query(ConferenceBot).filter(
+        ConferenceBot.user_id == str(dialog_id)
+    ).order_by(ConferenceBot.created_at.desc()).first()
 
 
 async def fetch_webpage_content(url: str) -> str:
