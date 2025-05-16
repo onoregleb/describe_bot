@@ -1,13 +1,10 @@
 import asyncio
 import logging
 import re
-from fastapi import FastAPI, Request, Depends, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-import uvicorn
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
-from config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
+from config import TELEGRAM_BOT_TOKEN
 from database import get_db, create_tables
 from telegram_client import TelegramClient
 from services import (
@@ -30,51 +27,94 @@ for logger_name in ['__main__', 'services', 'telegram_client']:
     module_logger.setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="URL Description Bot")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-
-@app.on_event("startup")
-async def startup_event():
+async def init_bot():
+    """Инициализация бота при запуске"""
     # Создаем таблицы при запуске
     create_tables()
     
-    # Настраиваем webhook при запуске
+    # Удаляем webhook, если он был настроен ранее
     try:
-        # Проверяем текущий webhook
         webhook_info = await TelegramClient.get_webhook_info()
         current_url = webhook_info.get('result', {}).get('url', '')
-        env_url = WEBHOOK_URL
         
-        # Если URL в настройках отличается от URL в .env или webhook не настроен
-        if current_url != env_url:
-            # Сначала удаляем старый webhook (если есть)
-            if current_url:
-                await TelegramClient.delete_webhook()
-                logger.info(f"Deleted previous webhook: {current_url}")
-            
-            # Устанавливаем новый webhook из .env
-            webhook_response = await TelegramClient.set_webhook()
-            logger.info(f"Webhook setup: {webhook_response}")
-        else:
-            logger.info(f"Webhook already set to correct URL: {env_url}")
+        if current_url:
+            await TelegramClient.delete_webhook()
+            logger.info(f"Deleted previous webhook: {current_url}")
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
+        logger.error(f"Error removing webhook: {e}")
+        
+    logger.info("Bot initialized for polling mode")
 
 
-@app.on_event("shutdown")
-async def shutdown_event():
+async def process_updates():
+    """Обработка обновлений через polling"""
+    db = next(get_db())
+    
     try:
-        await TelegramClient.delete_webhook()
+        # Получаем обновления через polling
+        updates = await TelegramClient.get_updates(timeout=10)
+        
+        for update in updates:
+            # Создаем задачу для обработки каждого обновления
+            asyncio.create_task(handle_update(update, db))
     except Exception as e:
-        logger.error(f"Webhook delete error: {e}")
+        logger.error(f"Error processing updates: {e}")
+    finally:
+        db.close()
+
+
+async def handle_update(update: Dict[str, Any], db: Session):
+    """Обработка одного обновления"""
+    try:
+        message = update.get("message", {})
+        if not message:
+            return
+            
+        chat_id = message.get("chat", {}).get("id")
+        if not chat_id:
+            return
+            
+        # Обрабатываем сообщение
+        parsed_data = await parse_message(message)
+        await process_message(chat_id, parsed_data, db)
+    except Exception as e:
+        logger.error(f"Error handling update: {e}")
+
+
+async def parse_message(message: Dict[str, Any]) -> Dict[str, Any]:
+    """Парсинг сообщения от пользователя"""
+    result = {}
+    
+    if "text" not in message:
+        return result
+        
+    text = message["text"]
+    chat_id = message.get("chat", {}).get("id")
+    
+    if not chat_id:
+        return result
+    
+    # Обрабатываем команду /start
+    if text.startswith("/start"):
+        if len(text) <= 6:
+            # Пустая команда /start
+            result["type"] = "start_empty"
+        else:
+            # Команда /start с параметрами
+            url_data = await parse_url_from_message(text[7:], chat_id)
+            if url_data:
+                result.update(url_data)
+    else:
+        # Обычное сообщение
+        url_data = await parse_url_from_message(text, chat_id)
+        if url_data:
+            result.update(url_data)
+        else:
+            # Вопрос о компании
+            result["query"] = text
+    
+    return result
 
 
 async def process_message(chat_id: int, parsed_data: Dict[str, Any], db: Session):
@@ -177,60 +217,27 @@ async def process_message(chat_id: int, parsed_data: Dict[str, Any], db: Session
         await TelegramClient.send_message(chat_id, "Возникла внутренняя ошибка. Пожалуйста, попробуйте позже.")
 
 
-@app.post("/webhook")
-async def telegram_webhook(
-        request: Request,
-        background_tasks: BackgroundTasks,
-        db: Session = Depends(get_db)
-):
-    try:
-        # Логирование всех заголовков запроса
-        headers = dict(request.headers.items())
-        logger.info(f"Received webhook request with headers: {headers}")
-        
-        # Получаем тело запроса
+async def main():
+    """Основная функция запуска бота"""
+    # Инициализируем бота
+    await init_bot()
+    
+    logger.info("Starting bot in polling mode with 1 second delay")
+    
+    # Бесконечный цикл polling
+    while True:
         try:
-            body = await request.body()
-            logger.info(f"Raw request body: {body}")
-            update = await request.json()
-            logger.info(f"Parsed update: {update}")
-        except Exception as e:
-            logger.error(f"Error parsing request: {e}")
-            return {"status": "error", "error": f"Could not parse JSON: {e}"}
+            # Обрабатываем обновления
+            await process_updates()
             
-        message = update.get("message", {})
-        chat_id = message.get("chat", {}).get("id")
-
-        if not chat_id:
-            logger.warning("No chat_id found in the update")
-            return {"status": "error", "error": "No chat_id found"}
-
-        text = message.get("text", "").strip()
-        logger.info(f"Received message: {text} from chat_id: {chat_id}")
-
-        # Process the message through our parsing function first
-        # This handles all link formats and empty /start commands
-        try:
-            parsed_data = await parse_url_from_message(text, chat_id)
-            background_tasks.add_task(process_message, chat_id, parsed_data, db)
-            return {"status": "ok"}
+            # Задержка 1 секунда между запросами
+            await asyncio.sleep(1)
         except Exception as e:
-            logger.error(f"Parse error: {e}")
-            await TelegramClient.send_message(
-                chat_id,
-                "Возникла ошибка при обработке вашего сообщения. Пожалуйста, попробуйте снова."
-            )
-            return {"status": "error"}
-
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return {"status": "error"}
-
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+            logger.error(f"Error in main loop: {e}")
+            # В случае ошибки делаем небольшую паузу
+            await asyncio.sleep(5)
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # Запускаем бота
+    asyncio.run(main())

@@ -1,12 +1,14 @@
 import httpx
 import logging
-from typing import Optional, Dict, Any
-from config import TELEGRAM_BOT_TOKEN, WEBHOOK_URL
+from typing import Optional, Dict, Any, List
+from config import TELEGRAM_BOT_TOKEN
 
 logger = logging.getLogger(__name__)
 
 class TelegramClient:
     API_URL = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+    # Для хранения последнего полученного update_id
+    last_update_id = 0
     
     @classmethod
     async def send_message(cls, chat_id: int, text: str) -> Dict[str, Any]:
@@ -67,3 +69,42 @@ class TelegramClient:
         async with httpx.AsyncClient() as client:
             response = await client.post(url)
             return response.json()
+    
+    @classmethod
+    async def get_updates(cls, timeout: int = 30) -> List[Dict[str, Any]]:
+        """Get updates from Telegram API using long polling
+        
+        Args:
+            timeout: Timeout in seconds for long polling
+            
+        Returns:
+            List of update objects
+        """
+        url = f"{cls.API_URL}/getUpdates"
+        
+        params = {
+            "timeout": timeout,
+            "allowed_updates": ["message"],
+        }
+        
+        # Если у нас уже есть last_update_id, запрашиваем только новые сообщения
+        if cls.last_update_id > 0:
+            params["offset"] = cls.last_update_id + 1
+        
+        try:
+            async with httpx.AsyncClient(timeout=timeout+10) as client:
+                response = await client.get(url, params=params)
+                result = response.json()
+                
+                if result.get("ok") and result.get("result"):
+                    updates = result["result"]
+                    
+                    # Обновляем last_update_id
+                    if updates:
+                        cls.last_update_id = max(update["update_id"] for update in updates)
+                    
+                    return updates
+                return []
+        except Exception as e:
+            logger.error(f"Error getting updates: {e}")
+            return []
